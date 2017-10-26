@@ -1,0 +1,241 @@
+---
+title: "Qualitative Activity Recognition - Weightlifting"
+output:
+  html_document:
+    keep_md: true
+---
+
+## Introduction
+
+Human Activity Recognition (HAR) is emerging as a key research area, in particular due to the development of context-aware systems (Jawbone Up, Nike FuelBand, and Fitbit ). There are many potential applications for HAR, such as: elderly monitoring, log systems for weight-loss, and digital assistants for weight lifting exercises.
+
+This project analyzes accelerometer data from weightlifting exercises and develops models to predict whether the exercises were performed correctly or incorrectly. Accelerometers were placed on the belt, forearm, arm, and dumbbell of six male participants between 20-28 years old. Participants were asked to perform lifts using a 1.25 kg dumbbell correctly and incorrectly in four different ways. The participants performed one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: according to the specification (class A), throwing elbows to the front (class B), lifting the dumbbell only halfway (class C), lowering the dumbbell only halfway (class D), and throwing hips to the front (class E). In sum, class A corresponds to the correct execution of the exercise, whereas the other four classes correspond to mistakes.
+
+## Methods
+
+Data analysis was performed on:  
+
+* R Version: 3.1.2  
+* Rstuido Version: 0.98.1091  
+* Operating System: Mac OS X 10.10.2  
+* Hardware: Macbook Pro, 2.2 GHz Intel Core 2 Duo, 4 GB RAM   
+
+Data Source: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13). Stuttgart, Germany: ACM SIGCHI, 2013.
+
+The raw data for this project came from this source: http://groupware.les.inf.puc-rio.br/har. The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv, and the test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv.
+
+## Data Analysis and Results
+
+### Load Libraries and Set Seed for Reproducibility
+
+```{r, cache=TRUE, results='hide', warning=FALSE, message=FALSE}
+# load libraries and set seed
+library(caret)
+library(randomForest)
+set.seed(5150)
+```
+
+### Import and Clean Data
+
+Removed unnecessary and N/A features, which reduced the number of possible features from 160 to 52 (raw accelerometer data).
+
+```{r, cache=TRUE}
+# input training data
+training_input <- read.csv("pml-training.csv", header=TRUE, na.strings=c("","NA"))
+```
+
+```{r, cache=TRUE}
+# clean data (remove un-necessary features nd NA/blank variables)
+training_input_no <- subset(training_input, new_window == "no")
+training_input_nona <- training_input_no[,colSums(is.na(training_input_no)) != nrow(training_input_no)]
+training_input_nona_subset <- subset(training_input_nona,
+            select=-c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2,
+                         cvtd_timestamp, new_window, num_window))
+```
+
+<br><br><br>
+
+### Data Partitioning
+
+Partitioned the training data into 3 groups (training, testing, and validation) (60:20:20 ratio). The "my training" group was used to fit the models. The "my testing" group was used for iterative cross-validation in the model selection process. The "my validation" group was used after model selection for final cross-validation and to determine model fit (accuracy and out-of-sample error). **NOTE: The "my testing" group is different than the "testing" dataset provided for the course project submission. See the Project Testing Set Submission section below.**
+
+```{r, cache=TRUE}
+# partition training dataset into training, testing, and validation (60:20:20 ratio)
+inTrain <- createDataPartition(training_input_nona_subset$classe, p = 0.6)[[1]]
+my_training <- training_input_nona_subset[inTrain,]
+testing_validation <- training_input_nona_subset[-inTrain,]
+inTest <- createDataPartition(testing_validation$classe, p = 0.5)[[1]]
+my_testing <- testing_validation[inTest,]
+my_validation <- testing_validation[-inTest,]
+```
+
+### Machine Learning Modeling
+
+Models were fit using the train() function (caret package) on the "my training" data group. The "my testing" data group was used for prediction and cross-validation during model selection. Out of all the tested algorithms, the Random Forest model ("rf") resulted in the highest prediction accuracy (99%) of the "my testing" data group. The random forest model used k-fold cross-validation ("cv") with 10 folds.
+
+The additional algorithms investigated were "rpart", "lda", and "gbm" (see Appendix). The prediction accuracy of these models using the "my testing" data group was approximately 49%, 69%, and 96% respectively.
+
+```{r, cache=TRUE}
+# best model "rf" and use cross-validation 10-fold
+model_final <- train(classe ~ ., data=my_training, method="rf",
+       trControl = trainControl(method = "cv", number = 10)) # -> 100%  
+```
+
+```{r, cache=TRUE}
+# display best model information
+model_final
+```
+
+```{r, cache=TRUE}
+# best model prediction, cross-validation with "my_testing" data group
+pred_final <- predict(model_final, newdata=my_testing)
+```
+
+```{r, cache=TRUE}
+# best model confusion matrix for accuracy results
+confusionMatrix(pred_final, my_testing$classe)
+```
+
+### Cross-Validation
+
+**After model selection, final cross-validation using the "my validation" data group was used to get an estimation of accuracy and out-of-sample error. The results were aproximtely 99% accuracy or 1% out-of-sample error rate.**
+
+```{r, cache=TRUE}
+# predition on "my validation" set, note: only ran once
+pred_final <- predict(model_final , newdata=my_validation)
+```
+
+```{r, cache=TRUE, results=FALSE}
+# plot confusion matrix visualization
+# modified code from: http://stackoverflow.com/questions/21589991/
+library(mlearning)
+plot_confusion <- function(a, b, c) {
+    CM <- confusion(a, b)
+    opar <- par(mar=c(5.1, 6.1, 2, 2))
+    x <- x.orig <- unclass(CM)
+    x <- log(x + 0.5) * 2.33
+    x[x < 0] <- NA
+    x[x > 10] <- 10
+    diag(x) <- -diag(x)
+    image(1:ncol(x), 1:ncol(x), -(x[, nrow(x):1]), xlab='Actual', ylab='',
+            col=colorRampPalette(c(hsv(h = 0, s = 0.9, v = 0.9, alpha = 1),
+                    hsv(h = 0, s = 0, v = 0.9, alpha = 1),
+                    hsv(h = 2/6, s = 0.9, v = 0.9, alpha = 1)))(41),
+        xaxt='n', yaxt='n', zlim=c(-10, 10))
+    axis(1, at=1:ncol(x), labels=colnames(x), cex.axis=0.8)
+    axis(2, at=ncol(x):1, labels=colnames(x), las=1, cex.axis=0.8)
+    title(ylab='Predicted', line=2.5)
+    abline(h = 0:ncol(x) + 0.5, col = 'gray')
+    abline(v = 0:ncol(x) + 0.5, col = 'gray')
+    text(1:c, rep(c:1, each=c), labels = sub('^0$', '', round(c(x.orig), 0)))
+    box(lwd=2)
+    par(opar)
+}
+```
+
+```{r figure1, cache=TRUE, fig.height=5, fig.width=5}
+# confusion matrix for best model on "my validation" data set
+confusionMatrix(pred_final , my_validation$classe)
+plot_confusion(pred_final, my_validation$classe, 5)
+```
+
+<br><br><br>
+
+### Variable Importance and Model Optimization   
+
+The best model (random forest), using all 52 variables/features (99% accuracy), was further investigated for the most important variables in an attempt to reduce the number of variables and shorten algorithm run-time.
+
+The final model was re-evaluated using only the top variables. As can be seen in the variable importance plot below, the top 7 variables appear to be the most important. The top 7 important variables were "roll belt", "pitch forearm", "yaw belt", "magnet dumbbell z", "pitch belt", "roll forearm", and "magnet dumbbell y".
+
+**In sum, the random forest model using only these 7 variables resulted in approximately 98% accuracy and 2% out-of-sample error via cross-validation with the "my validation" data/set. Thus, this optimized model significantly reduced algorithm run-time, while only decreasing prediction accuracy by about 1%.** For situations where processing power and/or time are limited, this model would be a acceptable compromise between run-time and accuracy.
+
+```{r figure2, cache=TRUE, fig.height=10, fig.width=10}
+# plot variable importance
+vi = varImp(model_final)
+plot( vi, col="red", col.line="red", type=c("p","l") )
+```
+
+```{r, cache=TRUE}
+# select top x variables in best model
+top <- 7
+top_var <- varImp(model_final)[[1]]
+top_var$variable <- rownames(top_var)
+top_var_ordered <- top_var[order(top_var$Overall, decreasing=TRUE), ]
+top_x <- top_var_ordered$variable[1:top]
+top_x <- c(top_x, "classe")
+my_training_top_x <- subset(my_training, select=(top_x))
+```
+
+```{r, cache=TRUE}
+# calculate optimized model
+model_final_top_x <- train(classe ~ ., data=my_training_top_x, method="rf",
+                   trControl = trainControl(method = "cv", number = 10))
+```
+
+```{r, cache=TRUE}
+# display information on best model - optimized
+model_final_top_x
+```
+
+```{r, cache=TRUE}
+# predictions and cross-validation with optimized model
+pred_final_top_x <- predict(model_final_top_x, newdata=my_testing)
+pred_final_top_x_v <- predict(model_final_top_x, newdata=my_validation)
+```
+
+```{r figure3, cache=TRUE, fig.height=5, fig.width=5}
+# confusion matrix for optimized model
+confusionMatrix(pred_final_top_x , my_testing$classe)
+plot_confusion(pred_final_top_x , my_testing$classe, 5)
+```
+
+```{r figure4, cache=TRUE, fig.height=5, fig.width=5}
+# confusion matrix on "my validation" set
+# note: only ran once after model section was complete
+confusionMatrix(pred_final_top_x_v , my_validation$classe)
+plot_confusion(pred_final_top_x_v , my_validation$classe, 5)
+```
+
+
+### Project Testing Set Submission
+
+The provided project testing data set was predicted using the full 52-feature model algorithm. The answers were submitted to the course website and resulted in 20/20 correct predictions.
+
+```{r, cache=TRUE}
+# input testing set for project submission predictions
+project_testing <- read.csv("pml-testing.csv")
+```
+
+```{r, cache=TRUE}
+# make predictions using model
+answers <- predict(model_final, project_testing)
+answers
+```
+
+## Conclusions
+
+In conclusion, this project has investigated models to predict weightlifting exercises from accelerometer data. **The best model used the random forest algorithm. Using cross-validation, the accuracy of the random forest model was estimated to be about 99% and out-of-sample error was estimated to be about 1%.**
+
+Moreover, this model was optimized, and the number of features was reduced from 52 to 7. The top 7 important variables were found to be "roll belt", "pitch forearm", "yaw belt", "magnet dumbbell z", "pitch belt", "roll forearm", and "magnet dumbbell y". **Using cross-validation, the accuracy of the optimized model was estimated to be about 98% and out-of-sample error was estimated to be about 2%.**
+
+## Appendix: Model Selection
+
+```{r, cache=TRUE, results='hide',eval=FALSE}
+# model selection
+model_rpart <- train(classe ~ ., data=my_training, method="rpart")  # -> 50%  
+model_lda <- train(classe ~ ., data=my_training, method="lda") # -> 70%
+model_gbm <- train(classe ~ ., data=my_training, method="gbm") # -> 98%  
+model_rf <- train(classe ~ ., data=my_training, method="rf") # -> 100%  
+
+# model selection prediction, cross-validation using my_testing data
+pred_rpart <- predict(model_rpart, newdata=my_testing)
+pred_lda <- predict(model_lda, newdata=my_testing)
+pred_gbm <- predict(model_gbm, newdata=my_testing)
+pred_rf <- predict(model_rf, newdata=my_testing)
+
+# confusion matrix for accuracy results
+confusionMatrix(pred_rpart, my_testing$classe) # -> 49%
+confusionMatrix(pred_lda, my_testing$classe) # -> 69%
+confusionMatrix(pred_gbm, my_testing$classe) # -> 96%
+confusionMatrix(pred_rf, my_testing$classe)  # -> 99%
+```

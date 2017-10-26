@@ -1,0 +1,370 @@
+# Data Science Capstone Project - Text-Prediction App   
+
+## About
+
+This application, made specifically for the capstone project of the Johns Hopkins University Data Science Specialization Certificate Program (Coursera), predicts the next word of the user’s text input. This model was developed using 500,000 randomly sampled lines from blogs, news stories, and twitter. A modified Katz Back-Off model was developed using n-word sequences (n-grams) ranging from 2 to 6 words. Frequent n-grams were identified and used to calculate probabilities. Numbers, punctuation, capitalization, and profanity were removed. In addition to the next word, this application displays a prediction data table, plot, and wordcloud.
+
+## Files
+
+**1_load_data.R** - inputs raw text data    
+**2_sample_data.R** - randomly samples 500,000 lines from raw data (training data set)    
+**3_clean_data.R** - combines data sets, labels profanity, tokenizes into words     
+**4_make_ngrams.R**  - creates n-gram table (n=6)     
+**5_process_ngrams.R** - creates n-gram frequency tables (n=6,5,4,3,2,1) with > 1 frequency     
+**6_model.R** - function that predicts next word using n-gram frequency tables    
+**7_test_model.R** - randomly samples 100,000 lines from raw data, creates n-grams (testing data set)   
+**8_test_results.R** - randomly samples 2,500 n-grams from testing set, calculates accuracy of model   
+**9_test_plot.R** - plots accuracy of text-prediction model vs. baseline model    
+**accuracy_plot.png** - plot of text-prediction model vs. baseline model    
+**app_instructions.png** - picture of app with instructions      
+**README.md** - readme file
+
+**/shiny_text_prediction_app/**         
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**model.R** - function that predicts next word using n-gram frequency tables for shiny app     
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**server.R** - shiny app server function, loads model.R   
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**ui.R** - shiny app user interface     
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**/shiny_text_prediction_app/data/**        
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**ngrams_limit.Rdata** - n-gram frequency tables data file for shiny app      
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**/shiny_text_prediction_app/www/**       
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;**bootstrap.css** - CSS theme for shiny app     
+
+## Instructions
+
+1. Type in a word or phrase into the "text input" box
+2. Click the "submit" button
+3. The best next-word prediction will be displayed on the "prediction" tab
+4. Select other tabs to view the prediction "data table", "plot", and "wordcloud"
+
+![instructions](./app_instructions.png)
+
+![Table](./app_table.png)
+
+![Plot](./app_plot.png)
+
+![Wordcloud](./app_wordcloud.png)
+
+<br><br>
+
+## Accuracy
+
+Accuracy was determined by comparing the predicted word(s) to the observed word in a test data set of 2,500 randomly sampled n-grams. This analysis was repeated 5 times to obtain standard deviation error. These results were significantly better (approximately 10-15%) than a baseline model (most frequent words, 1-grams (i.e. the, to, a)).
+
+- Single Word Prediction Accuracy: 14.8% +/- 0.8%
+- Top-3 Words Prediction Accuracy: 24.7% +/- 0.8%
+- Top-5 Words Prediction Accuracy: 29.7% +/- 0.7%
+- Top-10 Words Prediction Accuracy: 37.6% +/- 0.4%
+
+![instructions](./accuracy_plot.png)
+
+## Simplifications
+
+In order to create an application within the limitations of my desktop computer and shinyapps.io, only 500K lines of the raw text data was used to train the model. Furthermore, the n-gram frequency tables were limited to values with frequencies greater than 1 in order to decrease the amount of storage/memory needed.
+
+## Data Processing
+
+1. Data Source: HC Corpora, corpora.heliohost.org
+2. Training Set: US blogs, news, and twitter (500K lines of text)
+3. Removed capital letters, numbers, punctuation, and symbols
+4. Profanity words filtered and labeled (PROFANITY_WORD)
+5. Tokenized text and created n-grams (n=1,2,3,4,5,6)
+6. Created n-gram frequency tables (limited to frequencies > 1)
+7. Converted to data.table objects for faster lookup
+
+## Algorithm
+
+1. Process text input from user (separate into n words)
+2. Search (n+1)-gram frequency table for matches
+3. Calculate probabilities of each match (frequency/total)
+4. If no matches, search the next lower-order n-gram table
+5. If no match in 2-gram table, use most frequent 1-grams
+6. Return word with the highest probability score (0-1, 1=best)
+
+## Technical
+
+This application was created using R 3.1.3, Rstuido Version: 0.98.1103, and R packages: stylo 0.5.9, ggplot2 1.0.1, data.table 1.9.4, wordcloud 2.5, RColorBrewer 1.1-2, and shiny 0.11.1 using a Macbook Pro (2.2 GHz Intel Core 2 Duo 64-Bit Processor, 4 GB RAM) on Mac OS X 10.10.3 (XQuartz 2.7.7).
+
+<br><br>
+
+## References
+
+Katz, S. M. (1987). Estimation of probabilities from sparse data for the language model component of a speech recogniser. IEEE Transactions on Acoustics, Speech, and Signal Processing, 35(3), 400–401.
+
+## Source Code
+
+```{r eval=FALSE}
+# LOAD DATA
+# 1-load-data.R
+
+# load data
+blogs <- readLines("~/Downloads/Coursera/final/en_US/en_US.blogs.txt")
+news <- readLines("~/Downloads/Coursera/final/en_US/en_US.news.txt")
+twitter <- readLines("~/Downloads/Coursera/final/en_US/en_US.twitter.txt", skipNul = TRUE)
+
+# save data
+save(blogs, news, twitter, file = "raw_data.Rdata")
+```
+
+```{r eval=FALSE}
+# SAMPLE DATA
+# 2-sample-data.R
+
+# load data
+load("raw_data.Rdata")
+
+# sample data 100,000 lines
+b_sample <- sample(blogs, 100000)
+n_sample <- sample(news, 100000)
+t_sample <- sample(twitter, 300000)
+
+# save data
+save(b_sample, n_sample, t_sample, file="sample_data.Rdata")
+
+```
+
+```{r eval=FALSE}
+# CLEAN DATA
+# 3-clean-data.R
+
+# load data
+load("sample_data.Rdata")
+
+# combine into single data set
+all_words <- c(b_sample, n_sample, t_sample)
+
+# label start / end of lines with unique tags not in data set
+all_words_start <- paste("startoflinetag", all_words)
+all_words_start_stop <- paste(all_words_start, "endoflinetag")
+
+# tokenize into words using stylo package
+library(stylo)
+all_words_ss <- txt.to.words.ext(all_words_start_stop, language="English.contr", preserve.case = FALSE)
+
+# re-label start / stop tags
+all_words_ss_start <- gsub("startoflinetag", "START_STOP_TAG", all_words_ss)
+all_words_ss_start_stop <- gsub("endoflinetag", "START_STOP_TAG", all_words_ss_start)
+
+# basic profanity filter
+all_words_p <- all_words_ss_start_stop
+profanity <- "###"
+profanity_index <- grep(profanity, all_words_ss_start_stop)
+all_words_p[profanity_index] <-"PROFANITY_WORD"
+
+# replace contraction ^ symbol with '
+all_words_pc <- gsub("\\^", "'", all_words_p)
+
+# save datagrep
+save(all_words_pc, file="clean_data.Rdata")
+```
+
+```{r eval=FALSE}
+# MAKE N-GRAM
+# 4-make-ngrams.R
+
+# load libraries
+library(stylo)
+library(data.table)
+
+# load data
+load("clean_data.Rdata")
+
+# make n-grams, start with 6-grams
+ngram_6 <- make.ngrams(all_words_pc, ngram.size = 6)
+
+# convert to data.table objects for faster processing
+ngram_6_table <- data.table(ngram_6)
+
+# save data
+save(ngram_6_table, file="ngram_table.Rdata")
+```
+
+```{r eval=FALSE}
+# PROCESS N-GRAM
+# 5-process-ngrams
+
+# load libraries
+library(data.table)
+library(splitstackshape)
+
+# load data
+load("ngram_table.Rdata")
+
+# seperate string into word columns
+ng_6 <- cSplit_f(ngram_6_table, "ngram_6", " ")
+setnames(ng_6,1:6,c("n1","n2","n3","n4","n5","n6"))
+
+# make 1-grams, 2-grams, 3-grams, 4-grams, and 5-grams from 6-grams data.table
+ng_1 <- ng_6[,1, with=FALSE]
+ng_2 <- ng_6[,1:2, with=FALSE]
+ng_3 <- ng_6[,1:3, with=FALSE]
+ng_4 <- ng_6[,1:4, with=FALSE]
+ng_5 <- ng_6[,1:5, with=FALSE]
+
+# remove grams with START_LINE and END_LINE tags
+ng_1_ss <- ng_1[ n1 != 'START_STOP_TAG' ]
+ng_2_ss <- ng_2[ n1 != 'START_STOP_TAG' & n2 != 'START_STOP_TAG' ]
+ng_3_ss <- ng_3[ n1 != 'START_STOP_TAG' & n2 != 'START_STOP_TAG' & n3 != 'START_STOP_TAG' ]
+ng_4_ss <- ng_4[ n1 != 'START_STOP_TAG' & n2 != 'START_STOP_TAG' & n3 != 'START_STOP_TAG' &
+                   n4 != 'START_STOP_TAG' ]
+ng_5_ss <- ng_5[ n1 != 'START_STOP_TAG' & n2 != 'START_STOP_TAG' & n3 != 'START_STOP_TAG' &
+                   n4 != 'START_STOP_TAG' &
+                   n5 != 'START_STOP_TAG' ]
+ng_6_ss <- ng_6[ n1 != 'START_STOP_TAG' & n2 != 'START_STOP_TAG' & n3 != 'START_STOP_TAG' &
+                   n4 != 'START_STOP_TAG' &
+                   n5 != 'START_STOP_TAG' &
+                   n6 != 'START_STOP_TAG' ]
+
+# create freqency tables
+ngram_1_freq <- ng_1_ss[, .N ,by = list(n1)]
+ngram_2_freq <- ng_2_ss[, .N ,by = list(n1,n2)]
+ngram_3_freq <- ng_3_ss[, .N ,by = list(n1,n2,n3)]
+ngram_4_freq <- ng_4_ss[, .N ,by = list(n1,n2,n3,n4)]
+ngram_5_freq <- ng_5_ss[, .N ,by = list(n1,n2,n3,n4,n5)]
+ngram_6_freq <- ng_6_ss[, .N ,by = list(n1,n2,n3,n4,n5,n6)]
+
+# filted out low-freq values
+n_1 <- ngram_1_freq[ N > 1 ]
+n_2 <- ngram_2_freq[ N > 1 ]
+n_3 <- ngram_3_freq[ N > 1 ]
+n_4 <- ngram_4_freq[ N > 1 ]
+n_5 <- ngram_5_freq[ N > 1 ]
+n_6 <- ngram_6_freq[ N > 1 ]
+
+# ngram-1 table, top 100 single words
+setkey(n_1,n1)
+n_1$P <- n_1$N / sum(n_1$N)
+setnames(n_1, c("WORD", "N","P"))
+n_1 <- n_1[order(-N)][1:100]
+
+# key and sort data.tables for fast lookup
+setkey(n_1,WORD)
+setkey(n_2,n1,n2)
+setkey(n_3,n1,n2,n3)
+setkey(n_4,n1,n2,n3,n4)
+setkey(n_5,n1,n2,n3,n4,n5)
+setkey(n_6,n1,n2,n3,n4,n5,n6)
+
+# save ngram tables
+save(n_1, n_2, n_3, n_4, n_5, n_6, file="ngrams_limit.Rdata")
+```
+
+```{r eval=FALSE}
+# MODEL
+# 6-model.R
+
+# load libraries
+library(data.table)
+library(stylo)
+
+# load ngram tables
+load("ngrams_limit.Rdata")
+
+# FUNCTION katz back-off n-gram with highest freqency model
+text_predict <- function(text){
+          # remove puntuation, convert to lowercase, and split into words
+          text_split <- txt.to.words.ext(text, language="English.contr", preserve.case = FALSE)
+          # replace contraction symbol
+          text_split_edit <- gsub("\\^", "'", text_split)
+          # only use last 5 words if text is more than 5 words
+          size <- length(text_split_edit)
+          if (size >= 5) t <- text_split_edit[(size-4):size]
+          if (size < 5) t <- text_split_edit
+          # katz back-off method, ngram-6
+          if (size >= 5) {
+                    prediction_6 <- n_6[J(t[1],t[2],t[3],t[4],t[5])][order(-N)][,6:7, with=FALSE]
+                    prediction_5 <- n_5[J(t[2],t[3],t[4],t[5])][order(-N)][,5:6, with=FALSE]
+                    prediction_4 <- n_4[J(t[3],t[4],t[5])][order(-N)][,4:5, with=FALSE]
+                    prediction_3 <- n_3[J(t[4],t[5])][order(-N)][,3:4, with=FALSE]
+                    prediction_2 <- n_2[J(t[5])][order(-N)][,2:3, with=FALSE]
+                    prediction_6$P <- prediction_6$N / sum(prediction_6$N)
+                    setnames(prediction_6, c("WORD", "N","P"))                    
+                    prediction_5$P <- prediction_5$N / sum(prediction_5$N)
+                    setnames(prediction_5, c("WORD", "N","P"))
+                    prediction_4$P <- prediction_4$N / sum(prediction_4$N)
+                    setnames(prediction_4, c("WORD", "N","P"))
+                    prediction_3$P <- prediction_3$N / sum(prediction_3$N)
+                    setnames(prediction_3, c("WORD", "N","P"))
+                    prediction_2$P <- prediction_2$N / sum(prediction_2$N)
+                    setnames(prediction_2, c("WORD", "N","P"))                                   
+                    prediction_all <- rbind(prediction_6, prediction_5, prediction_4,
+                                            prediction_3, prediction_2,
+                                            n_1, fill=TRUE)[order(-P)][,c(1,3), with=FALSE]
+                    prediction <- prediction_all[,lapply(.SD,max),by="WORD"]
+                    # katz back-off method, ngram-5
+          } else if (size == 4) {
+                    prediction_5 <- n_5[J(t[1],t[2],t[3],t[4])][order(-N)][,5:6, with=FALSE]
+                    prediction_4 <- n_4[J(t[2],t[3],t[4])][order(-N)][,4:5, with=FALSE]
+                    prediction_3 <- n_3[J(t[3],t[4])][order(-N)][,3:4, with=FALSE]
+                    prediction_2 <- n_2[J(t[4])][order(-N)][,2:3, with=FALSE]
+                    prediction_5$P <- prediction_5$N / sum(prediction_5$N)
+                    setnames(prediction_5, c("WORD", "N","P"))
+                    prediction_4$P <- prediction_4$N / sum(prediction_4$N)
+                    setnames(prediction_4, c("WORD", "N","P"))
+                    prediction_3$P <- prediction_3$N / sum(prediction_3$N)
+                    setnames(prediction_3, c("WORD", "N","P"))
+                    prediction_2$P <- prediction_2$N / sum(prediction_2$N)
+                    setnames(prediction_2, c("WORD", "N","P"))                                   
+                    prediction_all <- rbind(prediction_5, prediction_4, prediction_3,
+                                            prediction_2,
+                                            n_1, fill=TRUE)[order(-P)][,c(1,3), with=FALSE]
+                    prediction <- prediction_all[,lapply(.SD,max),by="WORD"]
+                    # katz back-off method, ngram-4
+          } else if (size == 3) {
+                    prediction_4 <- n_4[J(t[1],t[2],t[3])][order(-N)][,4:5, with=FALSE]
+                    prediction_3 <- n_3[J(t[2],t[3])][order(-N)][,3:4, with=FALSE]
+                    prediction_2 <- n_2[J(t[3])][order(-N)][,2:3, with=FALSE]
+                    prediction_4$P <- prediction_4$N / sum(prediction_4$N)
+                    setnames(prediction_4, c("WORD", "N","P"))
+                    prediction_3$P <- prediction_3$N / sum(prediction_3$N)
+                    setnames(prediction_3, c("WORD", "N","P"))
+                    prediction_2$P <- prediction_2$N / sum(prediction_2$N)
+                    setnames(prediction_2, c("WORD", "N","P"))                                   
+                    prediction_all <- rbind(prediction_4, prediction_3, prediction_2,
+                                            n_1, fill=TRUE)[order(-P)][,c(1,3), with=FALSE]
+                    prediction <- prediction_all[,lapply(.SD,max),by="WORD"]
+                    # katz back-off method, ngram-3
+          } else if (size == 2) {
+                    prediction_3 <- n_3[J(t[1],t[2])][order(-N)][,3:4, with=FALSE]
+                    prediction_2 <- n_2[J(t[2])][order(-N)][,2:3, with=FALSE]
+                    prediction_3$P <- prediction_3$N / sum(prediction_3$N)
+                    setnames(prediction_3, c("WORD", "N","P"))
+                    prediction_2$P <- prediction_2$N / sum(prediction_2$N)
+                    setnames(prediction_2, c("WORD", "N","P"))                                   
+                    prediction_all <- rbind(prediction_3, prediction_2,
+                                            n_1, fill=TRUE)[order(-P)][,c(1,3), with=FALSE]
+                    prediction <- prediction_all[,lapply(.SD,max),by="WORD"]
+                    # katz back-off method, ngram-2
+          } else {
+                    prediction_2 <- n_2[J(t[1])][order(-N)][,2:3, with=FALSE]
+                    prediction_2$P <- prediction_2$N / sum(prediction_2$N)
+                    setnames(prediction_2, c("WORD", "N","P"))                                   
+                    prediction_all <- rbind(prediction_2,
+                                            n_1, fill=TRUE)[order(-P)][,c(1,3), with=FALSE]
+                    prediction <- prediction_all[,lapply(.SD,max),by="WORD"]
+          }
+          # if no matches, use general top 100 ngram-1
+          if (is.na( prediction[1]$WORD )) {
+                    prediction <- n_1[order(-P)]
+          }
+          # remove NA rows
+          prediction <- prediction[complete.cases(prediction),]
+          # return data.table with best matches
+          return(prediction)
+}
+
+# FUNCTION return text input filtered
+text_return <- function(text){
+          # remove puntuation, convert to lowercase, and split into words
+          text_split <- txt.to.words.ext(text, language="English.contr", preserve.case = FALSE)
+          # replace contraction symbol
+          text_split_edit <- gsub("\\^", "'", text_split)
+          # profanity filter
+          profanity <- "###"
+          profanity_index <- grep(profanity, text_split_edit)
+          text_split_edit[profanity_index] <-"PROFANITY_WORD"
+          text_r <- paste(text_split_edit, sep="", collapse=" ")
+          # return input filtered
+          return(text_r)
+}
+```

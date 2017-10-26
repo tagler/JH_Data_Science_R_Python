@@ -1,0 +1,185 @@
+---
+title: "Linear Modeling of Transmission Type vs. MPG in the Motor Trend Dataset (mtcars)"
+output: 
+  html_document:
+    keep_md: true
+---
+
+## Executive Summary
+
+This report investigates a Motor Trend dataset (mtcars) and explores the relationship between a set of variables and miles per gallon (mpg). Exploratory data analysis and a series of linear models were developed to elucidate the influence of transmission type on mpg (transmission only model, all variables model, and reduced model). The reduced linear model (which included the effects of car weight and 1/4 mile time) demonstrated that manual transmission cars had significantly greater mpg than automatic cars. Manual transmission cars were found to have a mean increase of 2.936 mpg (0.046 to 5.826 mpg, 95% confidence interval, P < 0.05) over automatic transmission cars.
+
+## Exploratory Data Analysis
+
+```{r, echo=FALSE, results='hide', message=FALSE}
+## load libraries
+library(dplyr); library(datasets); library(ggplot2)
+## load data as 'table data frame' object
+data(mtcars); mtcars_data <- tbl_df(mtcars)
+## define variables as factor terms 
+mtcars_data$cyl <- as.factor(mtcars_data$cyl); mtcars_data$vs <- as.factor(mtcars_data$vs)
+mtcars_data$am <- as.factor(mtcars_data$am); mtcars_data$gear <- as.factor(mtcars_data$gear)
+mtcars_data$carb <- as.factor(mtcars_data$carb); str(mtcars_data)
+```
+
+```{r figure1, echo=FALSE, results='hide', fig.height=4, fig.width=8}
+## pairs plot with smooth fit lines
+pairs(mtcars_data, panel = panel.smooth)
+```
+
+Plots of Transmission Type (am, 0 = auto and 1 = manual) vs. mpg:
+
+```{r, echo=FALSE, fig.width=3.25, fig.height=2.5}
+## exploratory data analysis - plot transmission type vs. mpg, histogram + density plots
+g0 <- ggplot(mtcars_data, aes(x=am, y=mpg, fill=am)) + geom_boxplot() + theme_bw() + guides(fill=FALSE)
+g1 <- ggplot(mtcars_data, aes(x=mpg, fill=am)) + geom_histogram(binwidth=2, alpha=0.4, position="identity") + theme_bw()
+g2 <- ggplot(mtcars_data, aes(x=mpg, fill=am)) + geom_density(alpha=0.4) + theme_bw()
+```
+
+```{r figure2, echo=FALSE, fig.width=3.25, fig.height=2.5}
+g0
+```
+
+```{r figure3, echo=FALSE, fig.width=3.25, fig.height=2.5}
+g1
+```
+
+```{r figure4, echo=FALSE, fig.width=3.25, fig.height=2.5}
+g2
+```
+Statistics and T-Test of Transmission Type (am, 0 = auto and 1 = manual) vs. mpg:
+
+```{r, echo=FALSE}
+## statistics and t-test - transmission type vs. mpg
+d <- dplyr::select(mtcars_data, am, mpg)
+d_stats <- summarize(group_by(d, am), "mpg-n" = length(mpg),"mpg-mean" = mean(mpg),
+          "mpg-sd" = sd(mpg), "mpg-median" = quantile(mpg,0.5),
+          "95%-CI-Left" = t.test(mpg)[[4]][1], "95%-CI-Right" = t.test(mpg)[[4]][2] ); d_stats
+```
+
+```{r, echo=FALSE}
+# t-test between mpg from auto vs. manual transmission 
+t.test(data.frame(d[d$am==1,][2]), data.frame(d[d$am==0,][2]), paired=FALSE, var.equal=FALSE)$method
+t.test(data.frame(d[d$am==1,][2]), data.frame(d[d$am==0,][2]), paired=FALSE, var.equal=FALSE)$conf.int
+```
+
+This exploratory analysis suggests that there is a significant increase in the mpg of manual cars (3.210 to 11.280 mpg, 95% confidence interval, P < 0.05) compared to automatic cars.
+
+## Regression - Base Model 
+
+Single variable regression model: lm(formula = mpg ~ am, data = mtcars_data)
+
+```{r, echo=FALSE}
+## linear regression between transmission and mpg only
+fit_am <- lm(mpg ~ am, mtcars_data); summary(fit_am)$coefficients
+```
+
+These regression results suggest that manual transmission cars have a mean increase of 7.245 mpg (3.652 to 10.848 mpg, 95% confidence interval, P < 0.05) over automatic transmission cars. These results are significant (all coefficients have P < 0.05); however, the transmission variable is likely influenced by other variables, as seen in pairs plot. Also, the adjusted R2 value is only 0.339, which means only ~33.9% of the variance is explained by this model; hence, we will now investigate the influence of other variables to improve the model. 
+
+## Regression - Full Model 
+
+All variables in dataset regression: lm(formula = mpg ~ ., data = mtcars_data)
+
+```{r, echo=FALSE, results='hide'}
+## fit all variables model 
+fit_all <- lm (mpg ~ . , mtcars_data); summary(fit_all)$coefficients
+```
+
+These regression results suggest that manual transmission cars have a mean increase of 1.212 mpg (-5.637 to 8.062 mpg, 95% confidence interval, p > 0.05, thus not a significant difference) over automatic transmission cars. While this model has a high adjusted R2 of 0.779, all the individual coefficients, including am, have P > 0.05 (see Appendix). Hence, this model is likely including unnecessary variables. 
+
+## Regression - Reduced Model
+
+Reduced Model: lm(formula = mpg ~ wt + qsec + am, data = mtcars_data)
+
+I utilized the strategy of subtracting variables one-at-a-time with the highest p values from the full regression model to produce a reduced model (-cyl -carb -gear -vs -drat -disp -hp). The goal was to achieve an adjusted R2 value of > 0.80 with all coefficients P < 0.05. Furthermore, due to the proposed questions, I assumed to include the am variable.
+
+```{r, echo=FALSE}
+## trial and error, removed variables
+fit_reduced <- lm (mpg ~ wt + qsec + am, mtcars_data)
+summary(fit_reduced)$coefficients; confint(fit_reduced)
+```
+
+These regression results suggest that manual transmission cars have a mean increase of 2.936 mpg (0.046 to 5.826 mpg, 95% confidence interval, P < 0.05) over automatic transmission cars. This model has a high adjusted R2 of 0.834 and all coefficients (besides the intercept) have P < 0.05. Each of these variables was found to have a significant influence on mpg via the anova() function (see Appendix). 
+
+```{r figure5, echo=FALSE, fig.width=11, fig.height=3}
+## residual plot and diagnostics 
+par(mfrow=c(1,4)); plot(fit_reduced)
+```
+
+These residual plots/diagnostics show that the residual values are randomly distributed and there does not appear to be any outliers that significantly influence the fit. Thus, this model is a 'good' fit. 
+
+## Conclusions:
+
+The reduced linear model (which included the effects of car weight and 1/4 mile time) demonstrated that manual transmission cars had significantly greater mpg than automatic cars. Manual transmission cars were found to have a mean increase of 2.936 mpg (0.046 to 5.826 mpg, 95% confidence interval, P < 0.05) over automatic transmission cars.
+
+## APPENDIX
+
+#### Exploratory Data Analysis
+
+```{r, message=FALSE}
+## load libraries
+library(dplyr); library(datasets); library(ggplot2)
+data(mtcars); mtcars_data <- tbl_df(mtcars)
+## define variables as factor terms 
+mtcars_data$cyl <- as.factor(mtcars_data$cyl); mtcars_data$vs <- as.factor(mtcars_data$vs)
+mtcars_data$am <- as.factor(mtcars_data$am); mtcars_data$gear <- as.factor(mtcars_data$gear)
+mtcars_data$carb <- as.factor(mtcars_data$carb); summary(mtcars_data)
+```
+
+```{r figure6, results='hide', fig.show='hide'}
+## pairs plot with smooth fit lines
+pairs(mtcars_data, panel = panel.smooth)
+```
+
+```{r figure7, fig.show='hide', results='hide'}
+## exploratory data analysis - plot transmission type vs. mpg, histogram + density plots
+g0 <- ggplot(mtcars_data, aes(x=am, y=mpg, fill=am)) + geom_boxplot() + theme_bw() + guides(fill=FALSE)
+g1 <- ggplot(mtcars_data, aes(x=mpg, fill=am)) + geom_histogram(binwidth=2, alpha=0.4, position="identity") + theme_bw()
+g2 <- ggplot(mtcars_data, aes(x=mpg, fill=am)) + geom_density(alpha=0.4) + theme_bw()
+g0; g1; g2
+```
+
+```{r, results='hide'}
+## statistics and t-test - transmission type vs. mpg
+d <- dplyr::select(mtcars_data, am, mpg)
+d_stats <- summarize(group_by(d, am), "mpg-n" = length(mpg),"mpg-mean" = mean(mpg),"mpg-sd" = sd(mpg), "mpg-median" = quantile(mpg,0.5), "95%-CI-Left" = t.test(mpg)[[4]][1], "95%-CI-Right" = t.test(mpg)[[4]][2] ); d_stats
+```
+
+```{r}
+# t-test between mpg from auto vs. manual transmission 
+t.test(data.frame(d[d$am==1,][2]), data.frame(d[d$am==0,][2]), paired=FALSE, var.equal=FALSE)
+```
+
+#### Regression - Base Model 
+
+```{r}
+fit_am <- lm(mpg ~ am, mtcars_data); summary(fit_am)
+```
+
+```{r figure8, fig.width=11, fig.height=3}
+par(mfrow=c(1,4)); plot(fit_am)
+```
+
+#### Regression - Full Model 
+
+```{r}
+fit_all <- lm (mpg ~ . , mtcars_data); summary(fit_all)$coefficients
+```
+
+```{r figure9, fig.width=11, fig.height=3, warning=FALSE, message=FALSE}
+par(mfrow=c(1,4)); plot(fit_all)
+```
+
+#### Regression - Reduced Model
+
+```{r}
+fit_reduced <- lm (mpg ~ wt + qsec + am, mtcars_data); summary(fit_reduced); confint(fit_reduced)
+```
+
+```{r figure10, results='hide', fig.show='hide'}
+par(mfrow=c(1,4)); plot(fit_reduced)
+```
+
+```{r}
+anova(fit_reduced)
+```
